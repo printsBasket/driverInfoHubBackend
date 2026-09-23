@@ -1,17 +1,57 @@
 import { NextResponse } from 'next/server';
 
+// Allowed origins
+const ALLOWED_ORIGINS = [
+  'https://driverinfohub.com',
+  'https://www.driverinfohub.com'
+];
+
+// Get CORS headers based on request origin
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+// Handle CORS preflight request
+export async function OPTIONS(request: Request) {
+  const origin = request.headers.get('origin');
+  
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      ...getCorsHeaders(origin),
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+}
+
 export async function POST(request: Request) {
   try {
     let body: Record<string, unknown>;
 
+    const origin = request.headers.get('origin');
+    const corsHeaders = getCorsHeaders(origin);
+
     try {
       body = await request.json();
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON payload.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid JSON payload.' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     if (typeof body !== 'object' || body === null) {
-      return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid request body.' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     const { name, email, subject, message } = body as {
@@ -24,7 +64,7 @@ export async function POST(request: Request) {
     if (!name || !email || !message) {
       return NextResponse.json(
         { error: 'Name, email, and message are required.' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -36,7 +76,10 @@ export async function POST(request: Request) {
 
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRe.test(safeEmail)) {
-      return NextResponse.json({ error: 'Invalid email address.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid email address.' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     const smtpHost = process.env.SMTP_HOST?.trim();
@@ -51,7 +94,10 @@ export async function POST(request: Request) {
         subject: safeSubject,
         message: safeMessage,
       });
-      return NextResponse.json({ message: 'Message received. SMTP not configured.' }, { status: 200 });
+      return NextResponse.json(
+        { message: 'Message received. SMTP not configured.' },
+        { status: 200, headers: corsHeaders }
+      );
     }
 
     const nodemailer = (await import('nodemailer')).default;
@@ -89,13 +135,24 @@ export async function POST(request: Request) {
       `,
     });
 
-    return NextResponse.json({ message: 'Message sent successfully.' }, { status: 200 });
+    return NextResponse.json(
+      { message: 'Message sent successfully.' },
+      {
+        status: 200,
+        headers: corsHeaders,
+      }
+    );
   } catch (error) {
     console.error('[Contact API] Unexpected error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+    const origin = request.headers.get('origin');
+    
     return NextResponse.json(
       { error: 'Something went wrong while sending the message.', details: message },
-      { status: 500 }
+      {
+        status: 500,
+        headers: getCorsHeaders(origin),
+      }
     );
   }
 }
